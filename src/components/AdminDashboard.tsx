@@ -52,6 +52,7 @@ import {
   downloadMembersTemplate,
   parseCSVLine,
   KAS_PRESET_OPTIONS,
+  GOOGLE_APPS_SCRIPT_BACKEND_CODE,
 } from '../utils/storage';
 
 interface AdminDashboardProps {
@@ -2190,41 +2191,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="bg-slate-900 text-slate-100 rounded-xl p-3.5 text-xs font-mono space-y-2 border border-slate-800 animate-in fade-in">
                   <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
                     <span className="font-bold text-amber-400 text-[11px]">
-                      Kode doPost(e) di Google Apps Script:
+                      Kode Lengkap Google Apps Script (Auto-Sync 4 Sheet):
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        const code = `function doPost(e) {\n  try {\n    var data = JSON.parse(e.postData.contents);\n    var ss = SpreadsheetApp.getActiveSpreadsheet();\n    var sheetData = ss.getSheetByName("Data Arisan") || ss.insertSheet("Data Arisan");\n    \n    if (data.records && data.records.length > 0) {\n      data.records.forEach(function(r) {\n        sheetData.appendRow([new Date(), r.host, r.member, r.amount, r.timestamp]);\n      });\n    }\n    return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))\n      .setMimeType(ContentService.MimeType.JSON);\n  } catch (err) {\n    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))\n      .setMimeType(ContentService.MimeType.JSON);\n  }\n}`;
-                        navigator.clipboard.writeText(code);
-                        onToast('Kode Google Apps Script berhasil disalin ke clipboard!', 'success');
+                        navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_BACKEND_CODE);
+                        onToast('Kode Google Apps Script lengkap berhasil disalin ke clipboard!', 'success');
                       }}
-                      className="bg-slate-800 hover:bg-slate-700 text-emerald-300 px-2.5 py-1 rounded-lg text-[10px] font-sans font-bold transition-colors"
+                      className="bg-emerald-800 hover:bg-emerald-700 text-amber-300 px-3 py-1.5 rounded-lg text-[10px] font-sans font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      Salin Kode
+                      <Code2 className="w-3.5 h-3.5" />
+                      <span>Salin Semua Kode GAS</span>
                     </button>
                   </div>
-                  <pre className="overflow-x-auto text-[10px] text-emerald-300/90 leading-relaxed custom-scrollbar max-h-48 py-1">
-{`function doPost(e) {
-  try {
-    var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetData = ss.getSheetByName("Data Arisan") || ss.insertSheet("Data Arisan");
-    
-    // Tulis data transaksi arisan ke spreadsheet
-    if (data.records && data.records.length > 0) {
-      data.records.forEach(function(r) {
-        sheetData.appendRow([new Date(), r.host, r.member, r.amount, r.timestamp]);
-      });
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}`}
+                  <pre className="overflow-x-auto text-[10px] text-emerald-300/90 leading-relaxed custom-scrollbar max-h-60 py-1">
+{GOOGLE_APPS_SCRIPT_BACKEND_CODE}
                   </pre>
+                  <p className="text-[10px] text-slate-400 font-sans pt-1">
+                    ℹ️ Kode ini otomatis membuat & memperbarui 4 Sheet di Google Spreadsheet: <strong>Daftar Anggota</strong>, <strong>Data Arisan</strong>, <strong>Data Kas Tuan Rumah</strong>, dan <strong>Ringkasan & Jadwal</strong>.
+                  </p>
                 </div>
               )}
             </div>
