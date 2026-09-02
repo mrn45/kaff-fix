@@ -1,0 +1,8 @@
+{
+  "name": "MDS Kaukabus Syafaah",
+  "description": "Sistem Pembukuan Arisan MDS Kaukabus Syafaah untuk cek tagihan, rekap setoran, dan manajemen pengurus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
