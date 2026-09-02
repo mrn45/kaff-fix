@@ -206,16 +206,17 @@ export function downloadArisanInputTemplate(
   defaultNominal: number = 50000,
   defaultKasNominal: number = 5000
 ): void {
-  const currentHost = host || 'Bpk. H. Ahmad';
-  let csvContent = '\uFEFFTuan Rumah,Nama Anggota,Nominal Arisan,Nominal Kas\n';
+  const currentHost = host || 'Bpk. Tuan Rumah';
+  let csvContent = '\uFEFFNo,Tuan Rumah,Nama Anggota,Nominal Arisan,Nominal Kas\n';
   
   if (members.length > 0) {
-    members.forEach((m) => {
-      csvContent += `"${currentHost}","${m}",${defaultNominal},${defaultKasNominal}\n`;
+    members.forEach((m, idx) => {
+      csvContent += `${idx + 1},"${currentHost}","${m}",${defaultNominal},${defaultKasNominal}\n`;
     });
   } else {
-    csvContent += `"${currentHost}","Bpk. Budi Santoso",${defaultNominal},${defaultKasNominal}\n`;
-    csvContent += `"${currentHost}","Bpk. Faisal",${defaultNominal},${defaultKasNominal}\n`;
+    csvContent += `1,"${currentHost}","Bpk. Ahmad Fauzi",${defaultNominal},${defaultKasNominal}\n`;
+    csvContent += `2,"${currentHost}","Bpk. Budi Pratama",${defaultNominal},${defaultKasNominal}\n`;
+    csvContent += `3,"${currentHost}","Ibu Hj. Aminah",${defaultNominal},${defaultKasNominal}\n`;
   }
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -229,13 +230,20 @@ export function downloadArisanInputTemplate(
   URL.revokeObjectURL(url);
 }
 
-export function downloadMembersTemplate(): void {
-  const csvContent = '\uFEFFNama Anggota\n' +
-    '"Bpk. Ahmad Fauzi"\n' +
-    '"Bpk. Budi Pratama"\n' +
-    '"Ibu Hj. Aminah"\n' +
-    '"Ibu Siti Fatimah"\n' +
-    '"Bpk. Faisal"\n';
+export function downloadMembersTemplate(currentMembers?: string[]): void {
+  let csvContent = '\uFEFFNo,Nama Anggota\n';
+  
+  if (currentMembers && currentMembers.length > 0) {
+    currentMembers.forEach((m, idx) => {
+      csvContent += `${idx + 1},"${m}"\n`;
+    });
+  } else {
+    csvContent += '1,"Bpk. Ahmad Fauzi"\n' +
+      '2,"Bpk. Budi Pratama"\n' +
+      '3,"Ibu Hj. Aminah"\n' +
+      '4,"Ibu Siti Fatimah"\n' +
+      '5,"Bpk. Faisal"\n';
+  }
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

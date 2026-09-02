@@ -308,12 +308,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           // Skip header line
           const firstColLower = cols[0].toLowerCase();
           const secondColLower = cols[1] ? cols[1].toLowerCase() : '';
+          const thirdColLower = cols[2] ? cols[2].toLowerCase() : '';
+
           if (
             firstColLower.includes('tuan rumah') ||
             firstColLower.includes('nama anggota') ||
             firstColLower.includes('anggota') ||
+            firstColLower === 'no' ||
+            firstColLower === 'no.' ||
+            firstColLower === 'nomor' ||
+            firstColLower === 'no urut' ||
+            secondColLower.includes('tuan rumah') ||
             secondColLower.includes('nama') ||
-            secondColLower.includes('nominal')
+            secondColLower.includes('nominal') ||
+            thirdColLower.includes('nama')
           ) {
             continue;
           }
@@ -322,17 +330,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           let memberVal = '';
           let amountVal = '';
 
-          if (cols.length >= 3) {
-            hostVal = cols[0].trim();
-            memberVal = cols[1].trim();
-            amountVal = cols[2].trim();
+          // Check if column 0 is a sequence number (e.g. 1, 2, 3...)
+          if (cols.length >= 4 && !isNaN(Number(cols[0].trim()))) {
+            // [No, Tuan Rumah, Nama Anggota, Nominal Arisan, (Nominal Kas)]
+            hostVal = cols[1].trim();
+            memberVal = cols[2].trim();
+            amountVal = cols[3].trim();
+          } else if (cols.length >= 3) {
+            if (!isNaN(Number(cols[0].trim()))) {
+              // [No, Nama Anggota, Nominal Arisan]
+              memberVal = cols[1].trim();
+              amountVal = cols[2].trim();
+            } else {
+              // [Tuan Rumah, Nama Anggota, Nominal Arisan]
+              hostVal = cols[0].trim();
+              memberVal = cols[1].trim();
+              amountVal = cols[2].trim();
+            }
           } else if (cols.length === 2) {
-            memberVal = cols[0].trim();
-            amountVal = cols[1].trim();
+            if (!isNaN(Number(cols[0].trim())) && isNaN(Number(cols[1].trim()))) {
+              // [No, Nama Anggota]
+              memberVal = cols[1].trim();
+              amountVal = globalNominal || '50000';
+            } else {
+              // [Nama Anggota, Nominal]
+              memberVal = cols[0].trim();
+              amountVal = cols[1].trim();
+            }
           } else if (cols.length === 1) {
             memberVal = cols[0].trim();
             amountVal = globalNominal || '50000';
           }
+
+          // Clean up leading numbers if memberVal contains "1. Pak Ahmad"
+          memberVal = memberVal.replace(/^\d+[\.\-\s\)]+/, '').trim();
 
           if (hostVal && !detectedHost) {
             detectedHost = hostVal;
@@ -580,7 +611,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // HANDLERS: TAB 4 (MEMBERS)
   // -------------------------------------------------------------
   const handleDownloadMembersTemplate = () => {
-    downloadMembersTemplate();
+    downloadMembersTemplate(members);
     onToast('Template daftar anggota (.csv) berhasil diunduh.', 'success');
   };
 
@@ -611,22 +642,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           if (cols.length === 0) return;
 
           const col0Lower = cols[0].toLowerCase();
+          const col1Lower = cols[1] ? cols[1].toLowerCase() : '';
+
           if (
             col0Lower.includes('nama anggota') ||
             col0Lower === 'nama' ||
             col0Lower === 'name' ||
             col0Lower === 'no' ||
-            col0Lower === 'nomor'
+            col0Lower === 'nomor' ||
+            col0Lower === 'no.' ||
+            col0Lower === 'no urut' ||
+            col1Lower.includes('nama') ||
+            col1Lower.includes('name')
           ) {
             return;
           }
 
           let candidate = '';
-          for (const col of cols) {
-            const trimmed = col.trim();
-            if (trimmed && isNaN(Number(trimmed))) {
-              candidate = trimmed;
-              break;
+          // If first column is sequence number and second column is name
+          if (cols.length >= 2 && !isNaN(Number(cols[0].trim())) && cols[1].trim()) {
+            candidate = cols[1].trim();
+          } else {
+            for (const col of cols) {
+              const trimmed = col.trim();
+              if (trimmed && isNaN(Number(trimmed))) {
+                candidate = trimmed;
+                break;
+              }
             }
           }
 
@@ -634,7 +676,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             candidate = cols[0].trim();
           }
 
-          candidate = candidate.replace(/^\d+[\.\-\s]+/, '').trim();
+          // Strip any prefix like "1. ", "1 - ", "1) "
+          candidate = candidate.replace(/^\d+[\.\-\s\)]+/, '').trim();
 
           if (candidate.length > 0 && !existingLower.has(candidate.toLowerCase())) {
             existingLower.add(candidate.toLowerCase());
@@ -1803,7 +1846,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Template & Upload Anggota</span>
                   </h4>
-                  <span className="text-[9px] text-slate-400 font-medium">Format CSV / Excel</span>
+                  <span className="text-[9px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold">
+                    Format: No, Nama Anggota
+                  </span>
                 </div>
 
                 <input
