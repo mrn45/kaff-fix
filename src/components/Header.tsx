@@ -6,6 +6,7 @@ interface HeaderProps {
   isSyncing?: boolean;
   lastSyncTime?: string | null;
   syncStatus?: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
+  firebaseConnected?: boolean;
   onRefresh?: () => void;
 }
 
@@ -14,6 +15,7 @@ export const Header: React.FC<HeaderProps> = ({
   isSyncing = false,
   lastSyncTime = null,
   syncStatus = 'idle',
+  firebaseConnected = true,
   onRefresh,
 }) => {
   const hasGasUrl = Boolean(gasUrl && gasUrl.trim());
@@ -33,6 +35,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-800/90 text-amber-300 border border-amber-400/40 tracking-wide uppercase shadow-xs">
               <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-300" />
               Pembukuan Digital
+            </span>
+
+            {/* Firebase Database Status Badge */}
+            <span
+              title="Database Firebase Firestore aktif & tersimpan otomatis secara realtime"
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold border transition-all shadow-xs ${
+                firebaseConnected
+                  ? 'bg-amber-950/70 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-900/80 text-slate-300 border-slate-700'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${firebaseConnected ? 'bg-amber-400 animate-pulse' : 'bg-slate-400'}`} />
+              <span>{firebaseConnected ? 'Firebase Auto-Save' : 'Local Storage'}</span>
             </span>
 
             {/* Cloud Realtime Status Pill */}
@@ -66,16 +81,9 @@ export const Header: React.FC<HeaderProps> = ({
                     : 'Live Google Sheets'}
                 </span>
               </button>
-            ) : (
-              <span
-                title="Link Google Apps Script belum diatur. Buka Login Pengurus > Tab Atur untuk menyambungkan Google Sheets."
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold bg-slate-900/70 text-slate-300 border border-slate-700/60"
-              >
-                <CloudOff className="w-2.5 h-2.5 text-slate-400" />
-                <span>Mode Offline / Lokal</span>
-              </span>
-            )}
+            ) : null}
           </div>
+
 
           <h1 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight text-white drop-shadow-sm truncate">
             MDS Kaukabus Syafaah

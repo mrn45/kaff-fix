@@ -26,6 +26,11 @@ import {
   saveStoredHostKas,
   fetchDataFromGoogleAppsScript,
 } from './utils/storage';
+import {
+  saveArisanDataToFirebase,
+  subscribeToArisanData,
+  syncFirebaseToAppsScript,
+} from './services/firebase';
 import { Header } from './components/Header';
 import { CountdownWidget } from './components/CountdownWidget';
 import { TotalMembersWidget } from './components/TotalMembersWidget';
@@ -44,7 +49,13 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(getStoredSettings());
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Realtime Cloud Sync State
+  // Firebase Realtime State
+  const [firebaseConnected, setFirebaseConnected] = useState<boolean>(true);
+  const [lastSyncAppsScript, setLastSyncAppsScript] = useState<string | null>(() => {
+    return localStorage.getItem('mds_last_appscript_sync');
+  });
+
+  // Realtime Cloud Sync State (Google Apps Script)
   const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'online' | 'offline' | 'error'>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
@@ -55,8 +66,9 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
-  // Initialize data on mount
+  // Initialize data on mount and subscribe to Firebase Firestore Realtime Database
   useEffect(() => {
+    // 1. Initial optimistic load from local storage cache
     const loadedMembers = getStoredMembers();
     const loadedRecords = getStoredDatabase();
     const loadedHostKas = getStoredHostKas();
@@ -67,11 +79,81 @@ export default function App() {
     setHostKasEntries(loadedHostKas);
     setSettings(loadedSettings);
 
+    // 2. Realtime listener to Firebase Firestore
+    const unsubscribeFirebase = subscribeToArisanData(
+      (cloudData) => {
+        setFirebaseConnected(true);
+        setIsLoading(false);
+
+        const hasCloudContent =
+          (cloudData.members && cloudData.members.length > 0) ||
+          (cloudData.records && cloudData.records.length > 0) ||
+          (cloudData.hostKasEntries && cloudData.hostKasEntries.length > 0);
+
+        if (hasCloudContent) {
+          if (cloudData.members && cloudData.members.length > 0) {
+            setMembers(cloudData.members);
+            saveStoredMembers(cloudData.members);
+          }
+
+          if (cloudData.records) {
+            setRecords(cloudData.records);
+            saveStoredDatabase(cloudData.records);
+          }
+
+          if (cloudData.hostKasEntries) {
+            setHostKasEntries(cloudData.hostKasEntries);
+            saveStoredHostKas(cloudData.hostKasEntries);
+          }
+
+          if (cloudData.settings && Object.keys(cloudData.settings).length > 0) {
+            setSettings((prev) => {
+              const updated = {
+                ...prev,
+                host: cloudData.settings.host || prev.host,
+                datetime: cloudData.settings.datetime || prev.datetime,
+                defaultAmount: cloudData.settings.defaultAmount || prev.defaultAmount,
+                defaultKasAmount: cloudData.settings.defaultKasAmount || prev.defaultKasAmount,
+                gasUrl: cloudData.settings.gasUrl || prev.gasUrl,
+                adminUsername: cloudData.settings.adminUsername || prev.adminUsername,
+                adminPasswordHash: cloudData.settings.adminPasswordHash || prev.adminPasswordHash,
+              };
+              saveStoredSettings(updated);
+              return updated;
+            });
+          }
+
+          if (cloudData.lastSyncAppsScript) {
+            setLastSyncAppsScript(cloudData.lastSyncAppsScript);
+            setLastSyncTime(cloudData.lastSyncAppsScript);
+          }
+        } else {
+          // If Firebase Firestore document is empty, initialize it with current base data
+          saveArisanDataToFirebase({
+            members: loadedMembers,
+            records: loadedRecords,
+            hostKasEntries: loadedHostKas,
+            settings: loadedSettings,
+          }).catch((err) => {
+            console.warn('Initial Firebase seed warning:', err);
+          });
+        }
+      },
+      (error) => {
+        console.warn('Firebase realtime subscription warning:', error);
+        setFirebaseConnected(false);
+        setIsLoading(false);
+      }
+    );
+
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 600);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      unsubscribeFirebase();
+    };
   }, []);
 
   const showToast = (
@@ -85,24 +167,73 @@ export default function App() {
     }, 3200);
   };
 
+  // Automatic Firebase Firestore Updates:
   const handleUpdateMembers = (newMembers: string[]) => {
     setMembers(newMembers);
     saveStoredMembers(newMembers);
+    saveArisanDataToFirebase({ members: newMembers }).catch((err) => {
+      console.warn('Firebase save members error:', err);
+    });
   };
 
   const handleUpdateRecords = (newRecords: ArisanRecord[]) => {
     setRecords(newRecords);
     saveStoredDatabase(newRecords);
+    saveArisanDataToFirebase({ records: newRecords }).catch((err) => {
+      console.warn('Firebase save records error:', err);
+    });
   };
 
   const handleUpdateHostKas = (newKas: HostKasEntry[]) => {
     setHostKasEntries(newKas);
     saveStoredHostKas(newKas);
+    saveArisanDataToFirebase({ hostKasEntries: newKas }).catch((err) => {
+      console.warn('Firebase save host kas error:', err);
+    });
   };
 
   const handleUpdateSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     saveStoredSettings(newSettings);
+    saveArisanDataToFirebase({ settings: newSettings }).catch((err) => {
+      console.warn('Firebase save settings error:', err);
+    });
+  };
+
+  // Kirim / Sinkronkan Data dari Firebase ke Google Apps Script (Sheets)
+  const handleSyncFirebaseToAppsScript = async () => {
+    const gasUrl = settings.gasUrl?.trim();
+    if (!gasUrl) {
+      showToast(
+        'Link Web App Google Apps Script belum diisi! Silakan buka Tab Atur.',
+        'error'
+      );
+      return;
+    }
+
+    setIsLiveSyncing(true);
+    setSyncStatus('syncing');
+    showToast('Mengirim data dari Firebase ke Google Apps Script...', 'info');
+
+    try {
+      const res = await syncFirebaseToAppsScript(gasUrl, {
+        members,
+        records,
+        hostKasEntries,
+        settings,
+      });
+
+      setLastSyncAppsScript(res.timestamp);
+      setLastSyncTime(res.timestamp);
+      setSyncStatus('online');
+      showToast(res.message, 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSyncStatus('error');
+      showToast(`Gagal mengirim data ke Google Apps Script: ${msg}`, 'error');
+    } finally {
+      setIsLiveSyncing(false);
+    }
   };
 
   const handleToggleRealtime = (enabled: boolean) => {
@@ -115,6 +246,7 @@ export default function App() {
       'info'
     );
   };
+
 
   // Pull data from Google Apps Script (REALTIME READ)
   const pullDataFromAppsScript = useCallback(
@@ -307,8 +439,10 @@ export default function App() {
               isSyncing={isLiveSyncing}
               lastSyncTime={lastSyncTime}
               syncStatus={syncStatus}
+              firebaseConnected={firebaseConnected}
               onRefresh={() => pullDataFromAppsScript(false)}
             />
+
 
 
             {/* Scrollable Body Content with Responsive Grid for Mobile and PC */}
@@ -531,11 +665,14 @@ export default function App() {
                   settings={settings}
                   hostKasEntries={hostKasEntries}
                   isLiveSyncing={isLiveSyncing}
+                  firebaseConnected={firebaseConnected}
+                  lastSyncAppsScript={lastSyncAppsScript}
                   lastSyncTime={lastSyncTime}
                   syncStatus={syncStatus}
                   isRealtimeEnabled={isRealtimeEnabled}
                   onToggleRealtime={handleToggleRealtime}
                   onPullFromAppsScript={pullDataFromAppsScript}
+                  onSyncFirebaseToAppsScript={handleSyncFirebaseToAppsScript}
                   onUpdateMembers={handleUpdateMembers}
                   onUpdateRecords={handleUpdateRecords}
                   onUpdateSettings={handleUpdateSettings}

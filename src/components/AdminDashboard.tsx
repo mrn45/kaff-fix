@@ -63,11 +63,14 @@ interface AdminDashboardProps {
   settings: AppSettings;
   hostKasEntries: HostKasEntry[];
   isLiveSyncing?: boolean;
+  firebaseConnected?: boolean;
+  lastSyncAppsScript?: string | null;
   lastSyncTime?: string | null;
   syncStatus?: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
   isRealtimeEnabled?: boolean;
   onToggleRealtime?: (enabled: boolean) => void;
   onPullFromAppsScript?: (silent?: boolean) => Promise<void>;
+  onSyncFirebaseToAppsScript?: () => Promise<void>;
   onUpdateMembers: (newMembers: string[]) => void;
   onUpdateRecords: (newRecords: ArisanRecord[]) => void;
   onUpdateSettings: (newSettings: AppSettings) => void;
@@ -82,11 +85,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   settings,
   hostKasEntries,
   isLiveSyncing = false,
+  firebaseConnected = true,
+  lastSyncAppsScript,
   lastSyncTime: propLastSyncTime,
   syncStatus = 'idle',
   isRealtimeEnabled = true,
   onToggleRealtime,
   onPullFromAppsScript,
+  onSyncFirebaseToAppsScript,
   onUpdateMembers,
   onUpdateRecords,
   onUpdateSettings,
@@ -94,6 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   onToast,
 }) => {
+
 
   const [activeTab, setActiveTab] = useState<AdminTab>('input');
 
@@ -875,6 +882,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Save settings if changed
     onUpdateSettings(updatedSettings);
 
+    if (onSyncFirebaseToAppsScript) {
+      try {
+        await onSyncFirebaseToAppsScript();
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
+    }
+
     const payload = {
       action: 'SYNC_ALL_DATA',
       source: 'MDS_KAUKABUS_SYAFAAH_APP',
@@ -1007,21 +1023,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             />
           </div>
           <div>
-            <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm leading-tight">
-              Dashboard Pengurus
-            </h3>
-            <p className="text-[10px] text-slate-500">MDS Kaukabus Syafaah</p>
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm leading-tight">
+                Dashboard Pengurus
+              </h3>
+              <span
+                title="Penyimpanan otomatis ke cloud Firebase Firestore aktif"
+                className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-md"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>Firebase DB</span>
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500">MDS Kaukabus Syafaah • Auto-Save Cloud</p>
           </div>
         </div>
 
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition-all"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Keluar</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onSyncFirebaseToAppsScript && (
+            <button
+              type="button"
+              id="btn-admin-header-sync-gas"
+              onClick={onSyncFirebaseToAppsScript}
+              disabled={isLiveSyncing || isSyncing}
+              title="Kirim dan sinkronkan data Firebase ke Google Apps Script (Sheets)"
+              className="flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1.5 rounded-lg transition-all shadow-2xs cursor-pointer active:scale-95"
+            >
+              <Send className={`w-3 h-3 ${isLiveSyncing ? 'animate-bounce text-emerald-600' : 'text-emerald-700'}`} />
+              <span className="hidden sm:inline">Singkron ke Sheets</span>
+            </button>
+          )}
+
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Keluar</span>
+          </button>
+        </div>
       </div>
+
 
       {/* Main Tab Content Panel */}
       <div className="relative flex-1 overflow-hidden flex flex-col min-h-0 bg-white border border-slate-200 rounded-2xl shadow-sm mb-2">
@@ -2153,7 +2195,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             id="admin-tab-settings"
             className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4 md:p-5 space-y-4 pb-14 bg-slate-50/50"
           >
-            {/* Card 1: Google Apps Script Synchronization */}
+            {/* Card 1: Firebase Cloud Storage Status & Auto-Save Information */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-white to-emerald-500/10 p-4 sm:p-5 rounded-2xl border border-amber-200/80 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-2.5 border-b border-amber-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wider">
+                        Database Utama: Firebase Firestore
+                      </h4>
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span>Auto-Save Aktif</span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Setiap data anggota, transaksi arisan, kas, & pengaturan langsung tersimpan otomatis ke Cloud Firebase Firestore.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span>Realtime Cloud Firestore</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-white/90 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <span className="block text-[10px] text-slate-500 font-bold uppercase">Anggota</span>
+                  <span className="font-extrabold text-slate-800 text-sm">{members.length}</span>
+                </div>
+                <div className="bg-white/90 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <span className="block text-[10px] text-slate-500 font-bold uppercase">Transaksi Arisan</span>
+                  <span className="font-extrabold text-slate-800 text-sm">{records.length}</span>
+                </div>
+                <div className="bg-white/90 p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <span className="block text-[10px] text-slate-500 font-bold uppercase">KAS Tuan Rumah</span>
+                  <span className="font-extrabold text-slate-800 text-sm">{hostKasEntries.length}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Google Apps Script Synchronization */}
             <div className="bg-white p-3.5 sm:p-4.5 md:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3.5">
               {/* Header Section */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-2.5 border-b border-slate-100">
@@ -2163,10 +2252,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                   <div>
                     <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wider">
-                      Sinkronisasi Google Apps Script
+                      Sinkronisasi Google Apps Script (Sheets)
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Kirim riwayat arisan, kas, dan anggota langsung ke Google Spreadsheet
+                      Kirim data dari Firebase ke Google Spreadsheet untuk arsip & rekap lembar kerja
                     </p>
                   </div>
                 </div>
@@ -2228,7 +2317,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                      Status Sinkronisasi Realtime
+                      Status Sinkronisasi
                     </span>
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -2242,20 +2331,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }`}
                     >
                       {syncStatus === 'online'
-                        ? '🟢 Realtime Cloud Aktif'
+                        ? '🟢 Terhubung ke Sheets'
                         : isLiveSyncing || isSyncing
                         ? '🟡 Menyinkronkan...'
                         : syncStatus === 'error'
                         ? '🔴 Gagal Terhubung'
-                        : '⚪ Siap Sinkron'}
+                        : '⚪ Siap Kirim'}
                     </span>
                   </div>
                   <div className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
                     <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span>
-                      {propLastSyncTime || lastSyncTime
-                        ? `Terakhir: ${propLastSyncTime || lastSyncTime}`
-                        : 'Belum pernah disinkronkan'}
+                      {lastSyncAppsScript || propLastSyncTime || lastSyncTime
+                        ? `Terakhir ke Sheets: ${lastSyncAppsScript || propLastSyncTime || lastSyncTime}`
+                        : 'Belum pernah dikirim ke Sheets'}
                     </span>
                   </div>
                 </div>
@@ -2270,69 +2359,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                     />
                     <span className="text-[11px] font-bold text-slate-700 select-none">
-                      Auto-Sync Realtime (25s)
+                      Pengecekan Rutin (25s)
                     </span>
                   </label>
                 )}
-
-                <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-600">
-                  <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                    {records.length} Transaksi
-                  </span>
-                  <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                    {members.length} Anggota
-                  </span>
-                  <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                    {hostKasEntries.length} KAS Tuan Rumah
-                  </span>
-                </div>
               </div>
 
-              {/* Action Buttons: PULL, PUSH, CODE */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
-                {/* 1. Tarik Data dari Cloud (Pull) */}
+              {/* PRIMARY ACTION: SINKRONKAN DATA DARI FIREBASE KE APPS SCRIPT */}
+              <div className="space-y-2 pt-1">
                 <button
                   type="button"
-                  id="btn-pull-appscript"
-                  onClick={handlePullFromAppsScript}
-                  disabled={isSyncing || isLiveSyncing || !settingGasUrl.trim()}
-                  className="sm:col-span-5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold py-2.5 px-3.5 rounded-xl text-xs shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  title="Ambil dan tampilkan data terbaru yang tersimpan di Google Sheets ke aplikasi"
-                >
-                  <CloudDownload className={`w-4 h-4 ${isSyncing || isLiveSyncing ? 'animate-bounce' : ''}`} />
-                  <span>
-                    {isSyncing || isLiveSyncing
-                      ? 'Sedang Mengambil...'
-                      : 'Tarik Data dari Cloud (Pull)'}
-                  </span>
-                </button>
-
-                {/* 2. Kirim Data ke Cloud (Push) */}
-                <button
-                  type="button"
-                  id="btn-sync-appscript"
+                  id="btn-sync-firebase-to-gas"
                   onClick={handleSyncToAppsScript}
                   disabled={isSyncing || isLiveSyncing || !settingGasUrl.trim()}
-                  className="sm:col-span-4 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold py-2.5 px-3.5 rounded-xl text-xs shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  title="Kirim dan simpan semua data anggota, transaksi arisan, dan kas ke Google Sheets"
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  title="Kirim dan sinkronkan seluruh data dari Firebase ke Google Spreadsheet"
                 >
-                  <CloudUpload className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <Send className={`w-4 h-4 ${isSyncing || isLiveSyncing ? 'animate-bounce' : ''}`} />
                   <span>
-                    {isSyncing
-                      ? 'Sedang Mengirim...'
-                      : 'Kirim ke Cloud (Push)'}
+                    {isSyncing || isLiveSyncing
+                      ? 'Sedang Mengirim Data dari Firebase ke Apps Script...'
+                      : 'Kirim / Sinkronkan Data dari Firebase ke Google Apps Script'}
                   </span>
                 </button>
 
-                {/* 3. Buka Kode GAS */}
-                <button
-                  type="button"
-                  onClick={() => setShowAppsScriptCode(!showAppsScriptCode)}
-                  className="sm:col-span-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Code2 className="w-4 h-4 text-slate-600" />
-                  <span>{showAppsScriptCode ? 'Tutup Kode' : 'Kode GAS'}</span>
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    id="btn-pull-appscript"
+                    onClick={handlePullFromAppsScript}
+                    disabled={isSyncing || isLiveSyncing || !settingGasUrl.trim()}
+                    className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Ambil data dari Google Sheets jika diperlukan"
+                  >
+                    <CloudDownload className="w-4 h-4 text-amber-600" />
+                    <span>Tarik Data dari Sheets (Pull)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAppsScriptCode(!showAppsScriptCode)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Code2 className="w-4 h-4 text-slate-600" />
+                    <span>{showAppsScriptCode ? 'Tutup Kode' : 'Petunjuk Kode GAS'}</span>
+                  </button>
+                </div>
               </div>
 
 
