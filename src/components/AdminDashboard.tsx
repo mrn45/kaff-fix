@@ -30,6 +30,7 @@ import {
   Unlock,
   ChevronRight,
   CloudUpload,
+  CloudDownload,
   Link2,
   Code2,
   CheckCircle,
@@ -53,6 +54,7 @@ import {
   parseCSVLine,
   KAS_PRESET_OPTIONS,
   GOOGLE_APPS_SCRIPT_BACKEND_CODE,
+  fetchDataFromGoogleAppsScript,
 } from '../utils/storage';
 
 interface AdminDashboardProps {
@@ -60,6 +62,12 @@ interface AdminDashboardProps {
   records: ArisanRecord[];
   settings: AppSettings;
   hostKasEntries: HostKasEntry[];
+  isLiveSyncing?: boolean;
+  lastSyncTime?: string | null;
+  syncStatus?: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
+  isRealtimeEnabled?: boolean;
+  onToggleRealtime?: (enabled: boolean) => void;
+  onPullFromAppsScript?: (silent?: boolean) => Promise<void>;
   onUpdateMembers: (newMembers: string[]) => void;
   onUpdateRecords: (newRecords: ArisanRecord[]) => void;
   onUpdateSettings: (newSettings: AppSettings) => void;
@@ -73,6 +81,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   records,
   settings,
   hostKasEntries,
+  isLiveSyncing = false,
+  lastSyncTime: propLastSyncTime,
+  syncStatus = 'idle',
+  isRealtimeEnabled = true,
+  onToggleRealtime,
+  onPullFromAppsScript,
   onUpdateMembers,
   onUpdateRecords,
   onUpdateSettings,
@@ -80,6 +94,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   onToast,
 }) => {
+
   const [activeTab, setActiveTab] = useState<AdminTab>('input');
 
   // ==========================================
@@ -911,6 +926,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setIsSyncing(false);
     }
   };
+
+  const handlePullFromAppsScript = async () => {
+    const targetUrl = settingGasUrl.trim();
+    if (!targetUrl) {
+      onToast('Silakan masukkan Link Web App Google Apps Script terlebih dahulu!', 'error');
+      return;
+    }
+
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      onToast('Format Link Apps Script tidak valid! URL harus diawali dengan https://', 'error');
+      return;
+    }
+
+    if (onPullFromAppsScript) {
+      await onPullFromAppsScript(false);
+      return;
+    }
+
+    setIsSyncing(true);
+    onToast('Sedang mengambil data terbaru dari Google Sheets...', 'info');
+
+    try {
+      const data = await fetchDataFromGoogleAppsScript(targetUrl);
+      if (data && data.status === 'success') {
+        if (data.members && data.members.length > 0) onUpdateMembers(data.members);
+        if (data.records) onUpdateRecords(data.records);
+        if (data.hostKasEntries) onUpdateHostKas(data.hostKasEntries);
+        if (data.settings) {
+          const updated: AppSettings = {
+            ...settings,
+            host: data.settings.host || settings.host,
+            datetime: data.settings.datetime || settings.datetime,
+            defaultAmount: data.settings.defaultAmount || settings.defaultAmount,
+            defaultKasAmount: data.settings.defaultKasAmount || settings.defaultKasAmount,
+            gasUrl: targetUrl,
+          };
+          onUpdateSettings(updated);
+        }
+        const nowStr = new Date().toLocaleString('id-ID', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        });
+        setLastSyncTime(nowStr);
+        onToast(
+          `Berhasil mengambil data: ${data.members?.length || 0} anggota, ${data.records?.length || 0} transaksi, ${data.hostKasEntries?.length || 0} kas!`,
+          'success'
+        );
+      } else {
+        onToast('Respon dari Google Apps Script tidak valid.', 'error');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      onToast(`Gagal mengambil data dari Google Sheets: ${msg}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
 
   // Filtered members for Tab 1
   const displayedInputMembers = useMemo(() => {
@@ -1956,15 +2029,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide">
                   Filter Laporan Pertemuan
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowClearModal(true)}
-                  className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Kosongkan DB</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {Boolean(settingGasUrl.trim()) && (
+                    <button
+                      type="button"
+                      id="btn-db-pull-cloud"
+                      onClick={handlePullFromAppsScript}
+                      disabled={isSyncing || isLiveSyncing}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer border border-emerald-200 shadow-2xs"
+                      title="Ambil data transaksi terbaru dari Google Sheets"
+                    >
+                      <CloudDownload className={`w-3 h-3 ${isSyncing || isLiveSyncing ? 'animate-bounce text-emerald-600' : ''}`} />
+                      <span>{isSyncing || isLiveSyncing ? 'Memuat...' : 'Tarik Cloud'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowClearModal(true)}
+                    className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Kosongkan DB</span>
+                  </button>
+                </div>
               </div>
+
 
               <select
                 id="admin-db-filter-host"
@@ -2137,14 +2226,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* Sync Status Box */}
               <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs">
                 <div className="space-y-1">
-                  <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
-                    Riwayat Sinkronisasi Terakhir
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                      Status Sinkronisasi Realtime
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        syncStatus === 'online'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : isLiveSyncing || isSyncing
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                          : syncStatus === 'error'
+                          ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                          : 'bg-slate-200 text-slate-700 border border-slate-300'
+                      }`}
+                    >
+                      {syncStatus === 'online'
+                        ? '🟢 Realtime Cloud Aktif'
+                        : isLiveSyncing || isSyncing
+                        ? '🟡 Menyinkronkan...'
+                        : syncStatus === 'error'
+                        ? '🔴 Gagal Terhubung'
+                        : '⚪ Siap Sinkron'}
+                    </span>
                   </div>
-                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{lastSyncTime || 'Belum pernah disinkronkan'}</span>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>
+                      {propLastSyncTime || lastSyncTime
+                        ? `Terakhir: ${propLastSyncTime || lastSyncTime}`
+                        : 'Belum pernah disinkronkan'}
+                    </span>
                   </div>
                 </div>
+
+                {/* Auto-Sync Toggle */}
+                {onToggleRealtime && (
+                  <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs hover:bg-slate-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={isRealtimeEnabled}
+                      onChange={(e) => onToggleRealtime(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-[11px] font-bold text-slate-700 select-none">
+                      Auto-Sync Realtime (25s)
+                    </span>
+                  </label>
+                )}
 
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-600">
                   <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
@@ -2159,32 +2288,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+              {/* Action Buttons: PULL, PUSH, CODE */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                {/* 1. Tarik Data dari Cloud (Pull) */}
+                <button
+                  type="button"
+                  id="btn-pull-appscript"
+                  onClick={handlePullFromAppsScript}
+                  disabled={isSyncing || isLiveSyncing || !settingGasUrl.trim()}
+                  className="sm:col-span-5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold py-2.5 px-3.5 rounded-xl text-xs shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  title="Ambil dan tampilkan data terbaru yang tersimpan di Google Sheets ke aplikasi"
+                >
+                  <CloudDownload className={`w-4 h-4 ${isSyncing || isLiveSyncing ? 'animate-bounce' : ''}`} />
+                  <span>
+                    {isSyncing || isLiveSyncing
+                      ? 'Sedang Mengambil...'
+                      : 'Tarik Data dari Cloud (Pull)'}
+                  </span>
+                </button>
+
+                {/* 2. Kirim Data ke Cloud (Push) */}
                 <button
                   type="button"
                   id="btn-sync-appscript"
                   onClick={handleSyncToAppsScript}
-                  disabled={isSyncing || !settingGasUrl.trim()}
-                  className="sm:col-span-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold py-2.5 px-4 rounded-xl text-xs shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  disabled={isSyncing || isLiveSyncing || !settingGasUrl.trim()}
+                  className="sm:col-span-4 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold py-2.5 px-3.5 rounded-xl text-xs shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  title="Kirim dan simpan semua data anggota, transaksi arisan, dan kas ke Google Sheets"
                 >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <CloudUpload className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                   <span>
                     {isSyncing
-                      ? 'Sedang Mengirim Data...'
-                      : 'Kirim / Sinkronkan Data ke Google Sheets'}
+                      ? 'Sedang Mengirim...'
+                      : 'Kirim ke Cloud (Push)'}
                   </span>
                 </button>
 
+                {/* 3. Buka Kode GAS */}
                 <button
                   type="button"
                   onClick={() => setShowAppsScriptCode(!showAppsScriptCode)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                  className="sm:col-span-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Code2 className="w-4 h-4 text-slate-600" />
-                  <span>{showAppsScriptCode ? 'Tutup Kode' : 'Petunjuk Kode GAS'}</span>
+                  <span>{showAppsScriptCode ? 'Tutup Kode' : 'Kode GAS'}</span>
                 </button>
               </div>
+
 
               {/* Code Snippet Box */}
               {showAppsScriptCode && (

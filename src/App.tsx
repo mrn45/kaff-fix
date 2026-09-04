@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   CheckSquare,
@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Home as HomeIcon,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ArisanRecord,
@@ -23,6 +24,7 @@ import {
   saveStoredSettings,
   getStoredHostKas,
   saveStoredHostKas,
+  fetchDataFromGoogleAppsScript,
 } from './utils/storage';
 import { Header } from './components/Header';
 import { CountdownWidget } from './components/CountdownWidget';
@@ -41,6 +43,17 @@ export default function App() {
   const [hostKasEntries, setHostKasEntries] = useState<HostKasEntry[]>([]);
   const [settings, setSettings] = useState<AppSettings>(getStoredSettings());
   const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  // Realtime Cloud Sync State
+  const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'online' | 'offline' | 'error'>('idle');
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    return localStorage.getItem('mds_last_appscript_sync');
+  });
+  const [isRealtimeEnabled, setIsRealtimeEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('mds_realtime_sync_enabled');
+    return saved !== null ? saved === 'true' : true;
+  });
 
   // Initialize data on mount
   useEffect(() => {
@@ -91,6 +104,145 @@ export default function App() {
     setSettings(newSettings);
     saveStoredSettings(newSettings);
   };
+
+  const handleToggleRealtime = (enabled: boolean) => {
+    setIsRealtimeEnabled(enabled);
+    localStorage.setItem('mds_realtime_sync_enabled', enabled ? 'true' : 'false');
+    showToast(
+      enabled
+        ? 'Sinkronisasi realtime otomatis diaktifkan.'
+        : 'Sinkronisasi realtime dinonaktifkan (mode manual).',
+      'info'
+    );
+  };
+
+  // Pull data from Google Apps Script (REALTIME READ)
+  const pullDataFromAppsScript = useCallback(
+    async (silent = false) => {
+      const gasUrl = settings.gasUrl?.trim();
+      if (!gasUrl) {
+        if (!silent) {
+          showToast('Link Google Apps Script belum diisi di Pengaturan Pengurus!', 'error');
+        }
+        setSyncStatus('offline');
+        return;
+      }
+
+      setIsLiveSyncing(true);
+      setSyncStatus('syncing');
+
+      try {
+        const data = await fetchDataFromGoogleAppsScript(gasUrl);
+        if (data && data.status === 'success') {
+          // 1. Update members from cloud
+          if (data.members && Array.isArray(data.members) && data.members.length > 0) {
+            setMembers(data.members);
+            saveStoredMembers(data.members);
+          }
+
+          // 2. Update transaction records from cloud
+          if (data.records && Array.isArray(data.records)) {
+            setRecords(data.records);
+            saveStoredDatabase(data.records);
+          }
+
+          // 3. Update host kas entries from cloud
+          if (data.hostKasEntries && Array.isArray(data.hostKasEntries)) {
+            setHostKasEntries(data.hostKasEntries);
+            saveStoredHostKas(data.hostKasEntries);
+          }
+
+          // 4. Update settings if cloud has scheduled info
+          if (data.settings && (data.settings.host || data.settings.datetime)) {
+            setSettings((prev) => {
+              const updated: AppSettings = {
+                ...prev,
+                host: data.settings?.host || prev.host,
+                datetime: data.settings?.datetime || prev.datetime,
+                defaultAmount: data.settings?.defaultAmount || prev.defaultAmount,
+                defaultKasAmount: data.settings?.defaultKasAmount || prev.defaultKasAmount,
+              };
+              saveStoredSettings(updated);
+              return updated;
+            });
+          }
+
+          const timeShort = new Date().toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          const timeFull = new Date().toLocaleString('id-ID', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          });
+          setLastSyncTime(timeShort);
+          localStorage.setItem('mds_last_appscript_sync', timeFull);
+          setSyncStatus('online');
+
+          if (!silent) {
+            showToast(
+              `Data realtime tersinkron dari Google Sheets: ${data.members?.length || 0} anggota, ${data.records?.length || 0} transaksi, ${data.hostKasEntries?.length || 0} kas!`,
+              'success'
+            );
+          }
+        } else {
+          setSyncStatus('error');
+          if (!silent) {
+            showToast('Respon dari Google Apps Script tidak valid.', 'error');
+          }
+        }
+      } catch (err: unknown) {
+        const errMessage = err instanceof Error ? err.message : String(err);
+        console.warn('Realtime fetch warning:', errMessage);
+        setSyncStatus('error');
+        if (!silent) {
+          showToast(`Gagal memuat data dari Google Sheets: ${errMessage}`, 'error');
+        }
+      } finally {
+        setIsLiveSyncing(false);
+      }
+    },
+    [settings.gasUrl]
+  );
+
+  // Background Realtime Synchronization Effect (Auto-fetch every 25s & on visibility change)
+  useEffect(() => {
+    if (!settings.gasUrl || !isRealtimeEnabled) {
+      setSyncStatus(settings.gasUrl ? 'idle' : 'offline');
+      return;
+    }
+
+    // Initial background sync after app loads
+    const initialTimer = setTimeout(() => {
+      pullDataFromAppsScript(true);
+    }, 1500);
+
+    // Periodic sync polling (every 25 seconds)
+    const intervalTimer = setInterval(() => {
+      pullDataFromAppsScript(true);
+    }, 25000);
+
+    // Sync when returning to tab/app
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        pullDataFromAppsScript(true);
+      }
+    };
+    const handleFocus = () => {
+      pullDataFromAppsScript(true);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [settings.gasUrl, isRealtimeEnabled, pullDataFromAppsScript]);
+
 
   // Total Kas calculation from Host Kas Entries (Potongan KAS + KAS Luar)
   const totalKasFromEntries = hostKasEntries.reduce(
@@ -150,7 +302,14 @@ export default function App() {
         {currentView === 'home' && (
           <div className="flex flex-col h-full overflow-hidden">
             {/* Header Brand */}
-            <Header />
+            <Header
+              gasUrl={settings.gasUrl}
+              isSyncing={isLiveSyncing}
+              lastSyncTime={lastSyncTime}
+              syncStatus={syncStatus}
+              onRefresh={() => pullDataFromAppsScript(false)}
+            />
+
 
             {/* Scrollable Body Content with Responsive Grid for Mobile and PC */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-5 md:p-6">
@@ -312,14 +471,30 @@ export default function App() {
                 </h2>
               </div>
 
-              <button
-                id="btn-nav-home"
-                onClick={() => setCurrentView('home')}
-                className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-2xs cursor-pointer shrink-0"
-              >
-                <HomeIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">Beranda</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {Boolean(settings.gasUrl && settings.gasUrl.trim()) && (
+                  <button
+                    type="button"
+                    id="btn-subnav-refresh"
+                    onClick={() => pullDataFromAppsScript(false)}
+                    disabled={isLiveSyncing}
+                    title="Perbarui data terbaru dari Google Sheets sekarang"
+                    className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLiveSyncing ? 'animate-spin text-emerald-600' : 'text-emerald-700'}`} />
+                    <span className="hidden md:inline">{isLiveSyncing ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                  </button>
+                )}
+
+                <button
+                  id="btn-nav-home"
+                  onClick={() => setCurrentView('home')}
+                  className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-2xs cursor-pointer shrink-0"
+                >
+                  <HomeIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Beranda</span>
+                </button>
+              </div>
             </div>
 
             {/* Service Dynamic View Content with Responsive Padding */}
@@ -355,6 +530,12 @@ export default function App() {
                   records={records}
                   settings={settings}
                   hostKasEntries={hostKasEntries}
+                  isLiveSyncing={isLiveSyncing}
+                  lastSyncTime={lastSyncTime}
+                  syncStatus={syncStatus}
+                  isRealtimeEnabled={isRealtimeEnabled}
+                  onToggleRealtime={handleToggleRealtime}
+                  onPullFromAppsScript={pullDataFromAppsScript}
                   onUpdateMembers={handleUpdateMembers}
                   onUpdateRecords={handleUpdateRecords}
                   onUpdateSettings={handleUpdateSettings}
@@ -366,6 +547,7 @@ export default function App() {
                   onToast={showToast}
                 />
               )}
+
             </div>
           </div>
         )}

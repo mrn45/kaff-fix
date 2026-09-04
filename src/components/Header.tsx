@@ -1,7 +1,23 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, RefreshCw, Cloud, CloudOff, AlertCircle } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  gasUrl?: string;
+  isSyncing?: boolean;
+  lastSyncTime?: string | null;
+  syncStatus?: 'idle' | 'syncing' | 'online' | 'offline' | 'error';
+  onRefresh?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  gasUrl,
+  isSyncing = false,
+  lastSyncTime = null,
+  syncStatus = 'idle',
+  onRefresh,
+}) => {
+  const hasGasUrl = Boolean(gasUrl && gasUrl.trim());
+
   return (
     <header
       id="main-app-header"
@@ -13,12 +29,54 @@ export const Header: React.FC = () => {
 
       <div className="relative z-10 flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-800/90 text-amber-300 border border-amber-400/40 tracking-wide uppercase shadow-xs">
               <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-300" />
               Pembukuan Digital
             </span>
+
+            {/* Cloud Realtime Status Pill */}
+            {hasGasUrl ? (
+              <button
+                type="button"
+                id="btn-header-sync"
+                onClick={onRefresh}
+                disabled={isSyncing}
+                title="Klik untuk menyinkronkan data terbaru dari Google Sheets sekarang"
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold border transition-all cursor-pointer shadow-xs active:scale-95 ${
+                  syncStatus === 'error'
+                    ? 'bg-rose-950/80 text-rose-200 border-rose-500/50 hover:bg-rose-900/90'
+                    : isSyncing
+                    ? 'bg-amber-950/80 text-amber-200 border-amber-500/50'
+                    : 'bg-emerald-950/80 text-emerald-200 border-emerald-400/50 hover:bg-emerald-800 hover:text-white'
+                }`}
+              >
+                <RefreshCw
+                  className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${
+                    isSyncing ? 'animate-spin text-amber-300' : 'text-emerald-300'
+                  }`}
+                />
+                <span className="truncate">
+                  {isSyncing
+                    ? 'Menyinkronkan...'
+                    : syncStatus === 'error'
+                    ? 'Koneksi Error • Coba Lagi'
+                    : lastSyncTime
+                    ? `Live Cloud • ${lastSyncTime}`
+                    : 'Live Google Sheets'}
+                </span>
+              </button>
+            ) : (
+              <span
+                title="Link Google Apps Script belum diatur. Buka Login Pengurus > Tab Atur untuk menyambungkan Google Sheets."
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold bg-slate-900/70 text-slate-300 border border-slate-700/60"
+              >
+                <CloudOff className="w-2.5 h-2.5 text-slate-400" />
+                <span>Mode Offline / Lokal</span>
+              </span>
+            )}
           </div>
+
           <h1 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight text-white drop-shadow-sm truncate">
             MDS Kaukabus Syafaah
           </h1>
@@ -40,4 +98,5 @@ export const Header: React.FC = () => {
     </header>
   );
 };
+
 
